@@ -1,0 +1,137 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Taylor SmarTemp</title>
+<style>
+body {
+  background: #101820;
+  color: white;
+  font-family: Arial, sans-serif;
+  text-align: center;
+  padding: 20px;
+}
+.card {
+  background: #243442;
+  border-radius: 18px;
+  padding: 20px;
+  margin: 18px 0;
+}
+.temp {
+  font-size: 64px;
+  font-weight: bold;
+  color: #65e6a5;
+}
+button {
+  background: #007aff;
+  color: white;
+  border: none;
+  border-radius: 12px;
+  padding: 16px 24px;
+  font-size: 20px;
+}
+#raw {
+  font-family: monospace;
+  overflow-wrap: anywhere;
+}
+</style>
+</head>
+<body>
+
+<h1>Taylor SmarTemp</h1>
+<p>Model 1485 - Prototype</p>
+
+<button onclick="connect()">Connect Thermometer</button>
+<p id="status">Disconnected</p>
+
+<div class="card">
+  <h2>Probe 1</h2>
+  <div class="temp" id="p1">--</div>
+</div>
+
+<div class="card">
+  <h2>Probe 2</h2>
+  <div class="temp" id="p2">--</div>
+</div>
+
+<p>Raw Bluetooth Data</p>
+<p id="raw">Waiting...</p>
+<p id="updated"></p>
+
+<script>
+let device;
+let characteristic;
+
+const service =
+  '00001950-0000-1000-8000-00805f9b34fb';
+
+const dataUUID =
+  '00002a6d-0000-1000-8000-00805f9b34fb';
+
+function decode(value) {
+  const b = new Uint8Array(
+    value.buffer,
+    value.byteOffset,
+    value.byteLength
+  );
+
+  document.getElementById('raw').textContent =
+    Array.from(b).map(x =>
+      x.toString(16).padStart(2,'0')
+    ).join(' ').toUpperCase();
+
+  if (b.length >= 8) {
+    document.getElementById('p1').textContent =
+      b[3] + b[2] * 0 + ' (raw)';
+    document.getElementById('p2').textContent =
+      (b[6] + b[7] * 256) + ' (raw)';
+  }
+
+  document.getElementById('updated').textContent =
+    'Updated: ' + new Date().toLocaleTimeString();
+}
+
+async function connect() {
+  const status = document.getElementById('status');
+
+  try {
+    status.textContent = 'Searching...';
+
+    device = await navigator.bluetooth.requestDevice({
+      acceptAllDevices: true,
+      optionalServices: [service]
+    });
+
+    device.addEventListener(
+      'gattserverdisconnected', () => {
+        status.textContent = 'Disconnected';
+        document.getElementById('p1').textContent = '--';
+        document.getElementById('p2').textContent = '--';
+      }
+    );
+
+    status.textContent = 'Connecting...';
+
+    const server = await device.gatt.connect();
+    const svc = await server.getPrimaryService(service);
+    characteristic = await svc.getCharacteristic(dataUUID);
+
+    characteristic.addEventListener(
+      'characteristicvaluechanged',
+      event => decode(event.target.value)
+    );
+
+    await characteristic.startNotifications();
+
+    status.textContent = 'Connected: ' + device.name;
+
+    decode(await characteristic.readValue());
+
+  } catch (error) {
+    status.textContent = 'Error: ' + error.message;
+  }
+}
+</script>
+
+</body>
+</html>
